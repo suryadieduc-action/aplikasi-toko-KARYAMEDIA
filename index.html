@@ -557,10 +557,20 @@ function addToCart(id) {
   } else {
     if (b.stok <= 0) { toast('⚠️ Stok habis!'); return; }
     const item = cart.find(x => x.id === id);
-    if (item) {
-      if (item.qty >= b.stok) { toast('⚠️ Stok tidak cukup'); return; }
-      item.qty++;
-    } else cart.push({ id: b.id, nama: b.nama, harga: b.jual, beli: b.beli, jenis: 'atk', qty: 1 });
+    const currentQty = item ? item.qty : 0;
+    const input = prompt(`📦 ${b.nama}\nHarga: ${rupiah(b.jual)}\nStok tersedia: ${b.stok}\n\nMasukkan JUMLAH (pcs):`, '1');
+    if (input === null) return;
+    const qty = parseInt(input) || 1;
+    if (qty <= 0) { toast('⚠️ Jumlah tidak valid'); return; }
+    const totalQty = currentQty + qty;
+    if (totalQty > b.stok) {
+      toast('⚠️ Stok cuma ' + b.stok);
+      if (item) item.qty = b.stok;
+      else cart.push({ id: b.id, nama: b.nama, harga: b.jual, beli: b.beli, jenis: 'atk', qty: b.stok });
+    } else {
+      if (item) item.qty = totalQty;
+      else cart.push({ id: b.id, nama: b.nama, harga: b.jual, beli: b.beli, jenis: 'atk', qty: qty });
+    }
   }
   document.getElementById('searchInput').value = '';
   document.getElementById('searchResults').classList.remove('show');
@@ -577,17 +587,17 @@ function renderCart() {
       const subtotal = c.harga * c.m2; total += subtotal;
       return `<div class="cart-item" style="flex-direction:column; align-items:stretch;">
         <div style="display:flex; justify-content:space-between;">
-          <div><div class="name">${c.nama} <span class="jenis-tag jenis-cetak">CETAK</span></div><div class="sub">${rupiah(c.harga)}/m² × ${angka(c.m2)} m² = ${rupiah(subtotal)}</div></div>
+          <div><div class="name">${c.nama} <span class="jenis-tag jenis-cetak">CETAK<span>${c.qty}</span> class="sub">${rupiah(c.harga)}/m² × ${angka(c.m2)} m² = ${rupiah(subtotal)}</div></div>
           <div class="cart-qty">
   <button onclick="ubahQty(${i}, -1)">−</button>
   <input type="number" value="${c.qty}" onchange="setQty(${i}, this.value)" onblur="setQty(${i}, this.value)" style="width:55px; text-align:center; padding:6px; font-size:15px; font-weight:bold; border:1.5px solid #2563eb; border-radius:6px; margin:0;">
   <button onclick="ubahQty(${i}, 1)">+</button>
 </div>`;
     } else {
-      total += c.harga * c.qty;
-      return `<div class="cart-item"><div><div class="name">${c.nama}</div><div class="sub">${rupiah(c.harga)} × ${c.qty} = ${rupiah(c.harga * c.qty)}</div></div>
-        <div class="cart-qty"><button onclick="ubahQty(${i}, -1)">−</button><span>${c.qty}</span><button onclick="ubahQty(${i}, 1)">+</button></div></div>`;
-    }
+  total += c.harga * c.qty;
+  return `<div class="cart-item"><div><div class="name">${c.nama}</div><div class="sub">${rupiah(c.harga)} × ${c.qty} = ${rupiah(c.harga * c.qty)}</div></div>
+    <div class="cart-qty"><button onclick="ubahQty(${i}, -1)">−</button><input type="number" value="${c.qty}" onchange="setQty(${i}, this.value)" style="width:60px; text-align:center; padding:5px; font-size:15px; font-weight:bold; border:1.5px solid #2563eb; border-radius:6px; margin:0; background:white;"><button onclick="ubahQty(${i}, 1)">+</button></div></div>`;
+}
   }).join('');
   document.getElementById('totalBelanja').textContent = rupiah(total);
 }
