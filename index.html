@@ -191,7 +191,8 @@
   <button onclick="showPage('barang', this)">📦 Barang</button>
   <button onclick="showPage('hutang', this)">📝 Hutang</button>
   <button onclick="showPage('laporan', this)">📊 Laporan</button>
-  <button onclick="showPage('backup', this)">💾 Data</button>
+  <button onclick="showPage('faktur', this)">📄 Faktur</button>
+<button onclick="showPage('backup', this)">💾 Data</button>
 </div>
 
 <!-- KASIR -->
@@ -307,7 +308,16 @@
   </div>
   <button class="btn btn-danger btn-block" onclick="hapusDataPeriode()">⚠️ Hapus Data Periode Ini</button>
 </div>
-
+<!-- ============ HALAMAN FAKTUR ============ -->
+<div id="page-faktur" class="page">
+  <div class="card">
+    <button class="btn btn-primary btn-block" onclick="bukaBuatFaktur()">➕ Buat Faktur Baru</button>
+  </div>
+  <div class="card">
+    <label>📄 Daftar Faktur</label>
+    <div id="listFaktur"><div class="loading"><span class="spinner"></span>Memuat...</div></div>
+  </div>
+</div>
 <!-- BACKUP / DATA -->
 <div id="page-backup" class="page">
   <div class="info-toko">
@@ -432,6 +442,60 @@
     </div>
   </div>
 </div>
+<!-- MODAL BUAT FAKTUR - STEP 1: PILIH PELANGGAN -->
+<div class="modal-bg" id="modalFakturPilih">
+  <div class="modal">
+    <h3>📄 Buat Faktur Baru</h3>
+    <p style="font-size:12px; color:#666; margin-bottom:12px;">Isi data pelanggan & pilih transaksi hutang yang mau difakturkan.</p>
+    <label>Nama Pemesan</label>
+    <input type="text" id="fakturNama" placeholder="Contoh: Ahmad" oninput="filterTransaksiHutang()">
+    <label>No. HP/WA (opsional)</label>
+    <input type="text" id="fakturHp" placeholder="0812-xxxx-xxxx">
+    <label>Keterangan (opsional)</label>
+    <input type="text" id="fakturKet" placeholder="Contoh: DP 50%">
+    <div id="listTransaksiHutang" style="max-height:300px; overflow-y:auto; margin-top:10px; border:1px solid #eee; border-radius:8px; padding:8px;">
+      <div class="empty">Memuat transaksi hutang...</div>
+    </div>
+    <div style="background:#eff6ff; padding:10px; border-radius:8px; margin-top:10px; font-size:13px;">
+      <div style="display:flex; justify-content:space-between;"><span>Transaksi dipilih:</span><b id="jmlDipilih">0</b></div>
+      <div style="display:flex; justify-content:space-between; margin-top:4px;"><span>Total Tagihan:</span><b id="totalDipilih" style="color:#2563eb;">Rp 0</b></div>
+    </div>
+    <div class="modal-btns">
+      <button class="btn btn-danger" onclick="closeModal('modalFakturPilih')">Batal</button>
+      <button class="btn btn-success" onclick="lanjutKePreview()">Lanjut →</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL PREVIEW FAKTUR -->
+<div class="modal-bg" id="modalFakturPreview">
+  <div class="modal" style="max-width:500px;">
+    <h3>📄 Preview Faktur</h3>
+    <div id="fakturPreviewArea" style="max-height:60vh; overflow-y:auto; border:1px solid #ddd; border-radius:8px; padding:12px; background:#fafafa;"></div>
+    <label style="margin-top:10px;">DP / Uang Muka (opsional)</label>
+    <input type="number" id="fakturDp" placeholder="0" value="0" oninput="updateSisaFaktur()">
+    <div style="background:#fef3c7; padding:10px; border-radius:8px; font-size:13px;">
+      <div style="display:flex; justify-content:space-between;"><span>Total:</span><b id="prevTotal">Rp 0</b></div>
+      <div style="display:flex; justify-content:space-between;"><span>DP:</span><b id="prevDp">Rp 0</b></div>
+      <div style="display:flex; justify-content:space-between; border-top:1px dashed #999; margin-top:4px; padding-top:4px;"><span>Sisa:</span><b id="prevSisa" style="color:#dc2626;">Rp 0</b></div>
+    </div>
+    <div class="modal-btns">
+      <button class="btn btn-danger" onclick="closeModal('modalFakturPreview')">Batal</button>
+      <button class="btn btn-success" onclick="simpanFaktur()" id="btnSimpanFaktur">💾 Simpan & Cetak</button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL DETAIL FAKTUR (buat lihat & print ulang) -->
+<div class="modal-bg" id="modalFakturDetail">
+  <div class="modal" style="max-width:500px;">
+    <div id="fakturDetailArea" style="max-height:65vh; overflow-y:auto;"></div>
+    <div class="modal-btns">
+      <button class="btn btn-danger" onclick="closeModal('modalFakturDetail')">Tutup</button>
+      <button class="btn btn-primary" onclick="printFakturDariDetail()">🖨️ Print</button>
+    </div>
+  </div>
+</div>
 <div class="toast" id="toast"></div>
 </div>
 
@@ -449,6 +513,10 @@ let transaksi = [];       // data periode yg ditampilkan
 let semuaTransaksi = [];  // cache semua transaksi dari Supabase (untuk laporan)
 let hutang = [];
 let periodeAktif = 'harian';
+let fakturList = [];
+let transaksiHutangTersedia = [];
+let transaksiDipilih = [];
+let fakturPreviewData = null;
 let kategoriAktif = 'semua';
 
 function rupiah(n) { return 'Rp ' + (n || 0).toLocaleString('id-ID'); }
@@ -499,6 +567,7 @@ async function startApp() {
   await loadSemuaTransaksi();
   await loadHutang();
   await cekMigrasi();
+  await loadFaktur();
   renderCart();
   loadLaporan();
 }
@@ -545,7 +614,8 @@ function showPage(id, btn) {
   if (id === 'barang') renderBarang();
   if (id === 'hutang') renderHutang();
   if (id === 'laporan') loadLaporan();
-  if (id === 'backup') { updateInfoBackup(); cekMigrasi(); }
+  if (id === 'faktur') loadFaktur();
+if (id === 'backup') { updateInfoBackup(); cekMigrasi(); }
 }
 
 function toggleFullscreen() {
@@ -1124,6 +1194,49 @@ function exportPDF() {
     td { padding: 7px 8px; border-bottom: 1px solid #eee; }
     tr:nth-child(even) td { background: #f8fafc; }
     .footer { margin-top: 20px; text-align: center; font-size: 11px; color: #999; border-top: 1px solid #eee; padding-top: 10px; }
+/* FAKTUR STYLING */
+.faktur-paper { background: white; padding: 24px; font-family: Arial, sans-serif; color: #222; font-size: 12px; line-height: 1.5; }
+.faktur-paper .f-header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 3px solid #e30613; padding-bottom: 12px; margin-bottom: 16px; }
+.faktur-paper .f-logo { width: 60px; height: 60px; object-fit: contain; }
+.faktur-paper .f-toko { flex: 1; padding-left: 12px; }
+.faktur-paper .f-toko h2 { color: #222; font-size: 18px; margin-bottom: 2px; }
+.faktur-paper .f-toko h2 span { color: #e30613; }
+.faktur-paper .f-toko p { font-size: 10px; color: #666; margin: 1px 0; }
+.faktur-paper .f-title { text-align: center; margin: 16px 0; }
+.faktur-paper .f-title h3 { font-size: 20px; color: #1e3a8a; letter-spacing: 3px; }
+.faktur-paper .f-info { display: flex; justify-content: space-between; margin-bottom: 16px; font-size: 11px; }
+.faktur-paper .f-info div { line-height: 1.6; }
+.faktur-paper table { width: 100%; border-collapse: collapse; margin: 12px 0; font-size: 11px; }
+.faktur-paper table th { background: #1e3a8a; color: white; padding: 8px; text-align: left; }
+.faktur-paper table td { padding: 7px 8px; border-bottom: 1px solid #ddd; vertical-align: top; }
+.faktur-paper table tr:nth-child(even) td { background: #f8fafc; }
+.faktur-paper .f-total { text-align: right; margin-top: 8px; font-size: 12px; }
+.faktur-paper .f-total .row { display: flex; justify-content: flex-end; gap: 20px; margin: 4px 0; }
+.faktur-paper .f-total .row .lbl { min-width: 100px; text-align: right; }
+.faktur-paper .f-total .row .val { min-width: 130px; text-align: right; font-weight: bold; }
+.faktur-paper .f-total .row.big { font-size: 15px; color: #2563eb; border-top: 2px solid #1e3a8a; padding-top: 6px; margin-top: 6px; }
+.faktur-paper .f-terbilang { background: #fef3c7; padding: 8px 12px; border-radius: 6px; font-style: italic; font-size: 11px; margin: 12px 0; }
+.faktur-paper .f-ttd { display: flex; justify-content: space-between; margin-top: 30px; font-size: 11px; }
+.faktur-paper .f-ttd div { text-align: center; width: 45%; }
+.faktur-paper .f-ttd .space { height: 60px; }
+.faktur-paper .f-footer { text-align: center; margin-top: 20px; padding-top: 10px; border-top: 1px dashed #999; font-size: 10px; color: #888; font-style: italic; }
+.faktur-paper .f-lunas-stamp { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%) rotate(-25deg); font-size: 60px; color: #16a34a; font-weight: bold; border: 5px solid #16a34a; padding: 8px 30px; border-radius: 12px; opacity: 0.85; pointer-events: none; }
+.faktur-wrapper { position: relative; }
+
+.faktur-list-item { padding: 10px; border-bottom: 1px solid #eee; cursor: pointer; }
+.faktur-list-item:active { background: #f0f9ff; }
+.faktur-list-item .no { font-weight: bold; color: #1e3a8a; font-size: 13px; }
+.faktur-list-item .nama { font-size: 13px; margin-top: 2px; }
+.faktur-list-item .info { font-size: 11px; color: #888; margin-top: 2px; }
+.faktur-list-item .total { font-weight: bold; color: #16a34a; }
+
+.transaksi-hutang-item { padding: 8px; border-bottom: 1px solid #eee; display: flex; align-items: flex-start; gap: 8px; cursor: pointer; }
+.transaksi-hutang-item:active { background: #f0f9ff; }
+.transaksi-hutang-item input[type="checkbox"] { width: auto; margin: 3px 0 0 0; flex-shrink: 0; }
+.transaksi-hutang-item .info { flex: 1; font-size: 12px; }
+.transaksi-hutang-item .info .tgl { color: #888; font-size: 11px; }
+.transaksi-hutang-item .info .items { font-size: 11px; color: #555; margin-top: 2px; }
+.transaksi-hutang-item .harga { font-weight: bold; color: #16a34a; font-size: 12px; }
     @media print { body { padding: 10px; } }</style></head><body>
     <div class="header"><h1><span class="karya">KARYA</span> MEDIA</h1>
       <p>Toko ATK, Digital Copy & Printing, Pembayaran PPOB</p>
@@ -1297,7 +1410,300 @@ async function migrasiDataLama() {
   alert(`✅ MIGRASI SELESAI!\n\n✓ Berhasil: ${ok}\n⚠️ Gagal/Duplikat: ${skip}\n\nData lama di HP masih ada sebagai backup.\nKalau udah yakin, bisa dihapus manual.`);
   toast('✓ Migrasi selesai!');
 }
+// ================= FAKTUR =================
+async function loadFaktur() {
+  const { data, error } = await sb.from('faktur').select('*').order('tanggal', { ascending: false });
+  if (error) { toast('⚠️ Gagal load faktur'); return; }
+  fakturList = data || [];
+  renderFaktur();
+}
 
+function renderFaktur() {
+  const el = document.getElementById('listFaktur');
+  if (fakturList.length === 0) { el.innerHTML = '<div class="empty">Belum ada faktur</div>'; return; }
+  el.innerHTML = fakturList.map(f => {
+    const tgl = new Date(f.tanggal).toLocaleDateString('id-ID', { day:'2-digit', month:'short', year:'numeric' });
+    return `<div class="faktur-list-item" onclick="lihatFaktur('${f.id}')">
+      <div style="display:flex; justify-content:space-between;">
+        <div>
+          <div class="no">${f.nomor_faktur} ${f.lunas ? '<span class="badge ok">LUNAS</span>' : '<span class="badge">BELUM</span>'}</div>
+          <div class="nama">👤 ${f.nama_pemesan}${f.no_hp ? ' • ' + f.no_hp : ''}</div>
+          <div class="info">${tgl} • ${(f.transaksi_ids || []).length} transaksi</div>
+        </div>
+        <div class="total">${rupiah(f.total)}</div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+async function bukaBuatFaktur() {
+  document.getElementById('fakturNama').value = '';
+  document.getElementById('fakturHp').value = '';
+  document.getElementById('fakturKet').value = '';
+  transaksiDipilih = [];
+  updateJmlDipilih();
+
+  // Load transaksi hutang yang belum difakturkan
+  const { data, error } = await sb.from('transaksi').select('*').eq('metode', 'Hutang').is('faktur_id', null).order('tanggal', { ascending: false });
+  if (error) { toast('⚠️ Gagal load'); return; }
+  transaksiHutangTersedia = data || [];
+  filterTransaksiHutang();
+  openModal('modalFakturPilih');
+}
+
+function filterTransaksiHutang() {
+  const el = document.getElementById('listTransaksiHutang');
+  if (transaksiHutangTersedia.length === 0) {
+    el.innerHTML = '<div class="empty">Tidak ada transaksi hutang yang belum difakturkan ✅</div>';
+    return;
+  }
+  el.innerHTML = transaksiHutangTersedia.map(t => {
+    const d = new Date(t.tanggal);
+    const tglJam = d.toLocaleDateString('id-ID', { day:'2-digit', month:'short' }) + ' ' + d.toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'});
+    const itemsStr = (t.items || []).map(i => i.jenis === 'cetak' ? `${i.nama} ${angka(i.m2)}m²` : `${i.nama} x${i.qty}`).join(', ');
+    const checked = transaksiDipilih.includes(t.id) ? 'checked' : '';
+    return `<label class="transaksi-hutang-item">
+      <input type="checkbox" ${checked} onchange="toggleTransaksi('${t.id}', this.checked)">
+      <div class="info">
+        <div class="tgl">${tglJam} • ${t.kasir_email || '-'}</div>
+        <div class="items">${itemsStr}</div>
+      </div>
+      <div class="harga">${rupiah(t.total)}</div>
+    </label>`;
+  }).join('');
+}
+
+function toggleTransaksi(id, checked) {
+  if (checked) {
+    if (!transaksiDipilih.includes(id)) transaksiDipilih.push(id);
+  } else {
+    transaksiDipilih = transaksiDipilih.filter(x => x !== id);
+  }
+  updateJmlDipilih();
+}
+
+function updateJmlDipilih() {
+  document.getElementById('jmlDipilih').textContent = transaksiDipilih.length;
+  const total = transaksiHutangTersedia.filter(t => transaksiDipilih.includes(t.id)).reduce((s, t) => s + t.total, 0);
+  document.getElementById('totalDipilih').textContent = rupiah(total);
+}
+
+async function lanjutKePreview() {
+  const nama = document.getElementById('fakturNama').value.trim();
+  if (!nama) { toast('⚠️ Nama pemesan wajib'); return; }
+  if (transaksiDipilih.length === 0) { toast('⚠️ Pilih minimal 1 transaksi'); return; }
+
+  // Generate nomor faktur
+  const nomor = await generateNomorFaktur();
+  const hp = document.getElementById('fakturHp').value.trim();
+  const ket = document.getElementById('fakturKet').value.trim();
+
+  const selectedTrx = transaksiHutangTersedia.filter(t => transaksiDipilih.includes(t.id));
+  // Gabungkan items
+  let allItems = [];
+  selectedTrx.forEach(t => (t.items || []).forEach(i => allItems.push(i)));
+
+  const total = selectedTrx.reduce((s, t) => s + t.total, 0);
+
+  fakturPreviewData = {
+    nomor_faktur: nomor,
+    nama_pemesan: nama,
+    no_hp: hp,
+    keterangan: ket,
+    transaksi_ids: transaksiDipilih,
+    items: allItems,
+    total: total,
+    dp: 0,
+    sisa: total
+  };
+
+  document.getElementById('fakturDp').value = '0';
+  renderPreviewFaktur();
+  updateSisaFaktur();
+  closeModal('modalFakturPilih');
+  openModal('modalFakturPreview');
+}
+
+async function generateNomorFaktur() {
+  const tahun = new Date().getFullYear();
+  const prefix = `KM-${tahun}-`;
+  // Ambil nomor terakhir tahun ini
+  const { data } = await sb.from('faktur').select('nomor_faktur').like('nomor_faktur', prefix + '%').order('nomor_faktur', { ascending: false }).limit(1);
+  let nextNum = 1;
+  if (data && data.length > 0) {
+    const last = data[0].nomor_faktur;
+    const num = parseInt(last.replace(prefix, '')) || 0;
+    nextNum = num + 1;
+  }
+  return prefix + String(nextNum).padStart(4, '0');
+}
+
+function renderPreviewFaktur() {
+  const f = fakturPreviewData;
+  const html = generateFakturHTML(f, false);
+  document.getElementById('fakturPreviewArea').innerHTML = html;
+}
+
+function updateSisaFaktur() {
+  if (!fakturPreviewData) return;
+  const dp = parseInt(document.getElementById('fakturDp').value) || 0;
+  const sisa = fakturPreviewData.total - dp;
+  document.getElementById('prevTotal').textContent = rupiah(fakturPreviewData.total);
+  document.getElementById('prevDp').textContent = rupiah(dp);
+  document.getElementById('prevSisa').textContent = rupiah(sisa);
+  fakturPreviewData.dp = dp;
+  fakturPreviewData.sisa = sisa;
+}
+
+function generateFakturHTML(f, withLunas) {
+  const tgl = new Date(f.tanggal || new Date());
+  const tglStr = tgl.toLocaleDateString('id-ID', { day:'2-digit', month:'long', year:'numeric' });
+  const terbilang = angkaKeHuruf(f.sisa !== undefined ? f.sisa : f.total);
+  // Group items
+  const groupedItems = {};
+  (f.items || []).forEach(i => {
+    const key = i.jenis === 'cetak' ? i.nama + '|' + i.harga : i.nama + '|' + i.harga;
+    if (!groupedItems[key]) groupedItems[key] = { nama: i.nama, harga: i.harga, jenis: i.jenis, qty: 0, m2: 0 };
+    if (i.jenis === 'cetak') groupedItems[key].m2 += i.m2;
+    else groupedItems[key].qty += i.qty;
+  });
+  const items = Object.values(groupedItems);
+
+  let html = `<div class="faktur-wrapper"><div class="faktur-paper">
+    <div class="f-header">
+      <img src="https://i.imgur.com/oLEm0Ov.png" class="f-logo" alt="Logo">
+      <div class="f-toko">
+        <h2><span>KARYA</span> MEDIA</h2>
+        <p>Toko ATK, Digital Copy & Printing, Pembayaran PPOB</p>
+        <p>📍 Jln. Rasau Jaya, Kuala Dua</p>
+        <p>✉️ karyamedia21@gmail.com | 💬 0899-9387-816</p>
+      </div>
+    </div>
+    <div class="f-title"><h3>FAKTUR</h3></div>
+    <div class="f-info">
+      <div><b>No. Faktur:</b> ${f.nomor_faktur}<br><b>Tanggal:</b> ${tglStr}</div>
+      <div style="text-align:right;"><b>Kepada:</b><br>${f.nama_pemesan}${f.no_hp ? '<br>' + f.no_hp : ''}</div>
+    </div>
+    ${f.keterangan ? `<div style="background:#eff6ff; padding:8px 12px; border-radius:6px; font-size:11px; margin-bottom:10px;">📝 ${f.keterangan}</div>` : ''}
+    <table>
+      <thead><tr><th style="width:30px;">No</th><th>Deskripsi</th><th style="width:70px; text-align:right;">Qty</th><th style="width:100px; text-align:right;">Harga</th><th style="width:110px; text-align:right;">Jumlah</th></tr></thead>
+      <tbody>`;
+  items.forEach((i, idx) => {
+    const qtyStr = i.jenis === 'cetak' ? `${angka(i.m2)} m²` : `${i.qty} pcs`;
+    const subtotal = i.jenis === 'cetak' ? i.m2 * i.harga : i.qty * i.harga;
+    html += `<tr><td>${idx + 1}</td><td>${i.nama}</td><td style="text-align:right;">${qtyStr}</td><td style="text-align:right;">${rupiah(i.harga)}</td><td style="text-align:right;">${rupiah(subtotal)}</td></tr>`;
+  });
+  html += `</tbody></table>
+    <div class="f-total">
+      <div class="row"><span class="lbl">Subtotal:</span><span class="val">${rupiah(f.total)}</span></div>
+      ${f.dp > 0 ? `<div class="row"><span class="lbl">DP:</span><span class="val">- ${rupiah(f.dp)}</span></div>
+      <div class="row big"><span class="lbl">Sisa Tagihan:</span><span class="val">${rupiah(f.sisa)}</span></div>` : `<div class="row big"><span class="lbl">Total:</span><span class="val">${rupiah(f.total)}</span></div>`}
+    </div>
+    <div class="f-terbilang">Terbilang: <b>${terbilang} Rupiah</b></div>
+    <div class="f-ttd">
+      <div><div>Penerima,</div><div class="space"></div><div>(_________________)</div></div>
+      <div><div>Hormat kami,</div><div class="space"></div><div><b>KARYA MEDIA</b></div></div>
+    </div>
+    <div class="f-footer">Faktur ini merupakan bukti tagihan yang sah.<br>Pembayaran dianggap lunas setelah dana diterima.</div>
+  </div>
+  ${withLunas ? '<div class="f-lunas-stamp">LUNAS</div>' : ''}
+  </div>`;
+  return html;
+}
+
+function angkaKeHuruf(n) {
+  const satuan = ['', 'Satu', 'Dua', 'Tiga', 'Empat', 'Lima', 'Enam', 'Tujuh', 'Delapan', 'Sembilan', 'Sepuluh', 'Sebelas'];
+  function spell(x) {
+    x = Math.floor(x);
+    if (x < 12) return satuan[x];
+    if (x < 20) return spell(x - 10) + ' Belas';
+    if (x < 100) return spell(Math.floor(x / 10)) + ' Puluh ' + spell(x % 10);
+    if (x < 200) return 'Seratus ' + spell(x - 100);
+    if (x < 1000) return spell(Math.floor(x / 100)) + ' Ratus ' + spell(x % 100);
+    if (x < 2000) return 'Seribu ' + spell(x - 1000);
+    if (x < 1000000) return spell(Math.floor(x / 1000)) + ' Ribu ' + spell(x % 1000);
+    if (x < 1000000000) return spell(Math.floor(x / 1000000)) + ' Juta ' + spell(x % 1000000);
+    return spell(Math.floor(x / 1000000000)) + ' Miliar ' + spell(x % 1000000000);
+  }
+  const hasil = spell(n).trim().replace(/\s+/g, ' ');
+  return hasil || 'Nol';
+}
+
+async function simpanFaktur() {
+  if (!fakturPreviewData) return;
+  const btn = document.getElementById('btnSimpanFaktur');
+  btn.disabled = true; btn.textContent = '⏳ Menyimpan...';
+
+  const insertData = {
+    nomor_faktur: fakturPreviewData.nomor_faktur,
+    nama_pemesan: fakturPreviewData.nama_pemesan,
+    no_hp: fakturPreviewData.no_hp,
+    keterangan: fakturPreviewData.keterangan,
+    transaksi_ids: fakturPreviewData.transaksi_ids,
+    items: fakturPreviewData.items,
+    total: fakturPreviewData.total,
+    dp: fakturPreviewData.dp,
+    sisa: fakturPreviewData.sisa,
+    dibuat_oleh: user.id,
+    dibuat_oleh_email: user.email,
+    lunas: false
+  };
+
+  const { data, error } = await sb.from('faktur').insert(insertData).select().single();
+  if (error) { toast('❌ ' + error.message); btn.disabled = false; btn.textContent = '💾 Simpan & Cetak'; return; }
+
+  // Update transaksi dengan faktur_id
+  for (const trxId of fakturPreviewData.transaksi_ids) {
+    await sb.from('transaksi').update({ faktur_id: data.id, nama_pemesan: fakturPreviewData.nama_pemesan }).eq('id', trxId);
+  }
+
+  btn.disabled = false; btn.textContent = '💾 Simpan & Cetak';
+  closeModal('modalFakturPreview');
+  toast('✓ Faktur tersimpan!');
+
+  // Buka print
+  const html = generateFakturHTML({ ...fakturPreviewData, tanggal: new Date().toISOString() }, false);
+  printFaktur(html);
+
+  await loadFaktur();
+  await loadSemuaTransaksi();
+}
+
+function printFaktur(htmlContent) {
+  const printWindow = window.open('', '_blank');
+  if (!printWindow) { toast('⚠️ Pop-up diblokir'); return; }
+  printWindow.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Faktur KARYA MEDIA</title>
+    <style>
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      body { font-family: Arial, sans-serif; padding: 20px; background: white; }
+      @media print { body { padding: 0; } }
+      ${document.querySelector('style').innerHTML.split('/* FAKTUR STYLING */')[1].split('/* FULLSCREEN')[0]}
+    </style></head><body>${htmlContent}</body></html>`);
+  printWindow.document.close();
+  printWindow.onload = function() { setTimeout(() => { printWindow.focus(); printWindow.print(); }, 400); };
+}
+
+async function lihatFaktur(id) {
+  const f = fakturList.find(x => x.id === id);
+  if (!f) return;
+  const html = generateFakturHTML(f, f.lunas);
+  document.getElementById('fakturDetailArea').innerHTML = html;
+  openModal('modalFakturDetail');
+}
+
+function printFakturDariDetail() {
+  const html = document.getElementById('fakturDetailArea').innerHTML;
+  printFaktur(html);
+}
+
+async function tandaiLunasFaktur(id) {
+  if (!confirm('Tandai faktur ini sebagai LUNAS?')) return;
+  const { error } = await sb.from('faktur').update({ lunas: true, tanggal_lunas: new Date().toISOString(), sisa: 0 }).eq('id', id);
+  if (error) { toast('❌ ' + error.message); return; }
+  toast('✓ Faktur LUNAS');
+  await loadFaktur();
+  closeModal('modalFakturDetail');
+}
 // ================= ENTER UNTUK LOGIN =================
 document.getElementById('loginPassword').addEventListener('keypress', e => { if (e.key === 'Enter') doLogin(); });
 document.getElementById('loginEmail').addEventListener('keypress', e => { if (e.key === 'Enter') document.getElementById('loginPassword').focus(); });
