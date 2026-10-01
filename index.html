@@ -405,7 +405,33 @@
     </div>
   </div>
 </div>
+<!-- ============ MODAL POPUP CETAK ============ -->
+<div class="modal-bg" id="modalCetak">
+  <div class="modal">
+    <h3 id="cetakJudul">📏 Cetak</h3>
+    <div style="background:#fdf2f8; border-left:4px solid #db2777; padding:10px; border-radius:8px; font-size:13px; color:#9d174d; margin-bottom:14px;">
+      💰 Harga: <b id="cetakHarga">Rp 0/m²</b>
+    </div>
 
+    <label>📐 Panjang (meter)</label>
+    <input type="number" step="0.01" id="inputPanjang" placeholder="0" oninput="hitungCetak()" style="font-size:18px; font-weight:bold; text-align:center;">
+
+    <label>📐 Lebar (meter)</label>
+    <input type="number" step="0.01" id="inputLebar" placeholder="0" oninput="hitungCetak()" style="font-size:18px; font-weight:bold; text-align:center;">
+
+    <div style="background:linear-gradient(135deg, #7c3aed, #db2777); color:white; padding:14px; border-radius:12px; text-align:center; margin-top:8px; margin-bottom:14px;">
+      <div style="font-size:12px; opacity:0.9;">LUAS TOTAL</div>
+      <div style="font-size:24px; font-weight:bold;" id="cetakLuas">0 m²</div>
+      <div style="font-size:11px; opacity:0.9; margin-top:6px; border-top:1px solid rgba(255,255,255,0.3); padding-top:6px;">TOTAL HARGA</div>
+      <div style="font-size:20px; font-weight:bold;" id="cetakTotal">Rp 0</div>
+    </div>
+
+    <div class="modal-btns">
+      <button class="btn btn-danger" onclick="closeModal('modalCetak')">Batal</button>
+      <button class="btn btn-success" onclick="simpanCetak()">✓ Tambah</button>
+    </div>
+  </div>
+</div>
 <div class="toast" id="toast"></div>
 </div>
 
@@ -547,13 +573,7 @@ function addToCart(id) {
   const b = barang.find(x => x.id === id);
   if (!b) return;
   if (b.jenis === 'cetak') {
-    const input = prompt(`📏 ${b.nama}\n${rupiah(b.jual)}/m²\n\nMasukkan LUAS (m²):`, '1');
-    if (!input) return;
-    const m2 = parseFloat(input.replace(',', '.'));
-    if (isNaN(m2) || m2 <= 0) { toast('⚠️ Luas tidak valid'); return; }
-    const item = cart.find(x => x.id === id);
-    if (item) item.m2 += m2;
-    else cart.push({ id: b.id, nama: b.nama, harga: b.jual, beli: b.beli, jenis: 'cetak', m2: m2 });
+    bukaPopupCetak(b.id);
   } else {
     if (b.stok <= 0) { toast('⚠️ Stok habis!'); return; }
     const item = cart.find(x => x.id === id);
@@ -589,7 +609,7 @@ function renderCart() {
     <div style="display:flex; justify-content:space-between;">
       <div>
         <div class="name">${c.nama} <span class="jenis-tag jenis-cetak">CETAK</span></div>
-        <div class="sub">${rupiah(c.harga)}/m² × ${angka(c.m2)} m² = ${rupiah(subtotal)}</div>
+        <div class="sub">${rupiah(c.harga)}/m² × ${angka(c.m2)} m² = ${rupiah(subtotal)}${c.detail && c.detail.length ? ' • ' + c.detail.join(', ') + ' m' : ''}</div>
       </div>
       <div class="cart-qty">
         <button onclick="hapusCart(${i})" style="background:#fee2e2; color:#dc2626;">🗑️</button>
@@ -632,7 +652,55 @@ function setQty(i, val) {
 
 function hapusCart(i) { cart.splice(i, 1); localStorage.setItem('km_cart', JSON.stringify(cart)); renderCart(); }
 function clearCart() { if (cart.length === 0) return; if (!confirm('Kosongkan?')) return; cart = []; localStorage.setItem('km_cart', JSON.stringify(cart)); renderCart(); }
+// ================= POPUP CETAK (Panjang × Lebar) =================
+let cetakBarang = null;
 
+function bukaPopupCetak(id) {
+  const b = barang.find(x => x.id === id);
+  if (!b) return;
+  cetakBarang = b;
+  document.getElementById('cetakJudul').textContent = '📏 ' + b.nama;
+  document.getElementById('cetakHarga').textContent = rupiah(b.jual) + '/m²';
+  document.getElementById('inputPanjang').value = '';
+  document.getElementById('inputLebar').value = '';
+  document.getElementById('cetakLuas').textContent = '0 m²';
+  document.getElementById('cetakTotal').textContent = 'Rp 0';
+  openModal('modalCetak');
+  setTimeout(() => document.getElementById('inputPanjang').focus(), 300);
+}
+
+function hitungCetak() {
+  const p = parseFloat(document.getElementById('inputPanjang').value) || 0;
+  const l = parseFloat(document.getElementById('inputLebar').value) || 0;
+  const luas = p * l;
+  const total = luas * (cetakBarang?.jual || 0);
+  document.getElementById('cetakLuas').textContent = (luas === 0 ? '0' : angka(luas)) + ' m²';
+  document.getElementById('cetakTotal').textContent = rupiah(total);
+}
+
+function simpanCetak() {
+  if (!cetakBarang) return;
+  const p = parseFloat(document.getElementById('inputPanjang').value) || 0;
+  const l = parseFloat(document.getElementById('inputLebar').value) || 0;
+  const luas = p * l;
+  if (luas <= 0) { toast('⚠️ Panjang & lebar harus > 0'); return; }
+  const item = cart.find(x => x.id === cetakBarang.id);
+  if (item) {
+    item.m2 += luas;
+    if (!item.detail) item.detail = [];
+    item.detail.push(`${angka(p)}×${angka(l)}`);
+  } else {
+    cart.push({
+      id: cetakBarang.id, nama: cetakBarang.nama, harga: cetakBarang.jual, beli: cetakBarang.beli,
+      jenis: 'cetak', m2: luas,
+      detail: [`${angka(p)}×${angka(l)}`]
+    });
+  }
+  localStorage.setItem('km_cart', JSON.stringify(cart));
+  closeModal('modalCetak');
+  renderCart();
+  toast(`✓ ${cetakBarang.nama} ${angka(p)}×${angka(l)} = ${angka(luas)} m²`);
+}
 // ================= BAYAR =================
 let totalBayar = 0;
 function openBayar() {
