@@ -841,7 +841,7 @@ function simpanCetak() {
     ukuran: `${angka(p)}×${angka(l)}`,
     keterangan: ket,
     luas: luas,
-    subtotal: luas * cetakBarang.jual
+    subtotal: Math.round(luas * cetakBarang.jual)
   };
 
   const item = cart.find(x => x.id === cetakBarang.id && x.jenis === 'cetak');
@@ -903,16 +903,18 @@ async function prosesBayar() {
   }
 
   const laba = cart.reduce((s, c) => c.jenis === 'cetak' ? s + (c.harga - c.beli) * c.m2 : s + (c.harga - c.beli) * c.qty, 0);
-  const { data: trxResult, error: trxErr } = await sb.from('transaksi').insert({
-    kasir_id: user.id, kasir_email: user.email, items: cart, total: totalBayar,
-    bayar: metode === 'Tunai' ? bayar : 0, kembali: metode === 'Tunai' ? bayar - totalBayar : 0,
-    metode, laba
-  }).select().single();
+const { data: trxResult, error: trxErr } = await sb.from('transaksi').insert({
+  kasir_id: user.id, kasir_email: user.email, items: cart,
+  total: Math.round(totalBayar),
+  bayar: metode === 'Tunai' ? Math.round(bayar) : 0,
+  kembali: metode === 'Tunai' ? Math.round(bayar - totalBayar) : 0,
+  metode, laba: Math.round(laba)
+}).select().single();
 
   if (trxErr) { toast('❌ ' + trxErr.message); btn.disabled = false; btn.textContent = '✓ Bayar'; return; }
 
   if (metode === 'Hutang') {
-    await sb.from('hutang').insert({ nama: namaHutang, jumlah: totalBayar, keterangan: 'Belanja', lunas: false });
+    await sb.from('hutang').insert({ nama: namaHutang, jumlah: Math.round(totalBayar), keterangan: 'Belanja', lunas: false });
     await loadHutang();
   }
 
@@ -1042,7 +1044,7 @@ async function tambahHutang() {
   const ket = document.getElementById('ketHutang').value.trim();
   if (!nama) { toast('⚠️ Nama wajib'); return; }
   if (jumlah <= 0) { toast('⚠️ Jumlah wajib'); return; }
-  const { error } = await sb.from('hutang').insert({ nama, jumlah, keterangan: ket, lunas: false });
+  const { error } = await sb.from('hutang').insert({ nama, jumlah: Math.round(jumlah), keterangan: ket, lunas: false });
   if (error) { toast('❌ ' + error.message); return; }
   document.getElementById('namaHutang').value = '';
   document.getElementById('jumlahHutang').value = '';
@@ -1756,19 +1758,19 @@ async function simpanFaktur() {
   btn.disabled = true; btn.textContent = '⏳ Menyimpan...';
 
   const insertData = {
-    nomor_faktur: fakturPreviewData.nomor_faktur,
-    nama_pemesan: fakturPreviewData.nama_pemesan,
-    no_hp: fakturPreviewData.no_hp,
-    keterangan: fakturPreviewData.keterangan,
-    transaksi_ids: fakturPreviewData.transaksi_ids,
-    items: fakturPreviewData.items,
-    total: fakturPreviewData.total,
-    dp: fakturPreviewData.dp,
-    sisa: fakturPreviewData.sisa,
-    dibuat_oleh: user.id,
-    dibuat_oleh_email: user.email,
-    lunas: false
-  };
+  nomor_faktur: fakturPreviewData.nomor_faktur,
+  nama_pemesan: fakturPreviewData.nama_pemesan,
+  no_hp: fakturPreviewData.no_hp,
+  keterangan: fakturPreviewData.keterangan,
+  transaksi_ids: fakturPreviewData.transaksi_ids,
+  items: fakturPreviewData.items,
+  total: Math.round(fakturPreviewData.total),
+  dp: Math.round(fakturPreviewData.dp || 0),
+  sisa: Math.round(fakturPreviewData.sisa || 0),
+  dibuat_oleh: user.id,
+  dibuat_oleh_email: user.email,
+  lunas: false
+};
 
   const { data, error } = await sb.from('faktur').insert(insertData).select().single();
   if (error) { toast('❌ ' + error.message); btn.disabled = false; btn.textContent = '💾 Simpan & Cetak'; return; }
