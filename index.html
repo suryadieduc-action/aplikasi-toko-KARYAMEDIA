@@ -505,17 +505,43 @@
   </div>
 </div>
 
-<!-- MODAL DETAIL FAKTUR (buat lihat & print ulang) -->
-<div class="modal-bg" id="modalFakturDetail">
-  <div class="modal" style="max-width:500px;">
-    <div id="fakturDetailArea" style="max-height:65vh; overflow-y:auto;"></div>
+<!-- MODAL EDIT FAKTUR -->
+<div class="modal-bg" id="modalEditFaktur">
+  <div class="modal">
+    <h3>✏️ Edit Faktur</h3>
+    <input type="hidden" id="editFakturId">
+    <label>Nama Pemesan</label>
+    <input type="text" id="editFakturNama">
+    <label>No. HP/WA</label>
+    <input type="text" id="editFakturHp">
+    <label>Keterangan</label>
+    <input type="text" id="editFakturKet">
+    <label>DP / Uang Muka (Rp)</label>
+    <input type="number" id="editFakturDp" placeholder="0" oninput="updateSisaEditFaktur()">
+    <div style="background:#fef3c7; padding:10px; border-radius:8px; font-size:13px;">
+      <div style="display:flex; justify-content:space-between;"><span>Total:</span><b id="editFakturTotal">Rp 0</b></div>
+      <div style="display:flex; justify-content:space-between; border-top:1px dashed #999; margin-top:4px; padding-top:4px;"><span>Sisa:</span><b id="editFakturSisa" style="color:#dc2626;">Rp 0</b></div>
+    </div>
     <div class="modal-btns">
-      <button class="btn btn-danger" onclick="closeModal('modalFakturDetail')">Tutup</button>
-      <button class="btn btn-primary" onclick="printFakturDariDetail()">🖨️ Print</button>
+      <button class="btn btn-danger" onclick="closeModal('modalEditFaktur')">Batal</button>
+      <button class="btn btn-primary" onclick="simpanEditFaktur()">Simpan</button>
     </div>
   </div>
 </div>
-<div class="toast" id="toast"></div>
+
+<!-- MODAL DETAIL FAKTUR -->
+<div class="modal-bg" id="modalFakturDetail">
+  <div class="modal" style="max-width:500px;">
+    <div id="fakturDetailArea" style="max-height:55vh; overflow-y:auto;"></div>
+    <input type="hidden" id="fakturDetailId">
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-top:10px;">
+      <button class="btn btn-danger btn-sm" onclick="closeModal('modalFakturDetail')">Tutup</button>
+      <button class="btn btn-primary btn-sm" onclick="printFakturDariDetail()">🖨️ Print</button>
+      <button class="btn btn-success btn-sm" onclick="tandaiLunasDariDetail()" id="btnLunasFaktur">✅ Tandai Lunas</button>
+      <button class="btn btn-warning btn-sm" onclick="bukaEditFaktur()">✏️ Edit</button>
+    </div>
+    <button class="btn btn-danger btn-block btn-sm" onclick="hapusFaktur()" style="margin-top:6px; background:#7f1d1d;">🗑️ Hapus Faktur Ini</button>
+  </div>
 </div>
 
 <script>
@@ -1520,14 +1546,19 @@ function renderFaktur() {
   if (fakturList.length === 0) { el.innerHTML = '<div class="empty">Belum ada faktur</div>'; return; }
   el.innerHTML = fakturList.map(f => {
     const tgl = new Date(f.tanggal).toLocaleDateString('id-ID', { day:'2-digit', month:'short', year:'numeric' });
+    const totalStr = rupiah(f.total);
+    const sisaStr = f.lunas ? '' : (f.dp > 0 ? `<div style="font-size:11px; color:#dc2626; margin-top:2px;">Sisa: ${rupiah(f.sisa)}</div>` : '');
     return `<div class="faktur-list-item" onclick="lihatFaktur('${f.id}')">
       <div style="display:flex; justify-content:space-between;">
         <div>
           <div class="no">${f.nomor_faktur} ${f.lunas ? '<span class="badge ok">LUNAS</span>' : '<span class="badge">BELUM</span>'}</div>
           <div class="nama">👤 ${f.nama_pemesan}${f.no_hp ? ' • ' + f.no_hp : ''}</div>
-          <div class="info">${tgl} • ${(f.transaksi_ids || []).length} transaksi</div>
+          <div class="info">${tgl} • ${(f.transaksi_ids || []).length} transaksi${f.dp > 0 ? ' • DP: ' + rupiah(f.dp) : ''}</div>
         </div>
-        <div class="total">${rupiah(f.total)}</div>
+        <div style="text-align:right;">
+          <div class="total">${totalStr}</div>
+          ${sisaStr}
+        </div>
       </div>
     </div>`;
   }).join('');
@@ -1835,8 +1866,18 @@ function printFaktur(htmlContent) {
 async function lihatFaktur(id) {
   const f = fakturList.find(x => x.id === id);
   if (!f) return;
+  document.getElementById('fakturDetailId').value = id;
   const html = generateFakturHTML(f, f.lunas);
   document.getElementById('fakturDetailArea').innerHTML = html;
+  // Update tombol lunas
+  const btnLunas = document.getElementById('btnLunasFaktur');
+  if (f.lunas) {
+    btnLunas.textContent = '🔓 Batal Lunas';
+    btnLunas.className = 'btn btn-warning btn-sm';
+  } else {
+    btnLunas.textContent = '✅ Tandai Lunas';
+    btnLunas.className = 'btn btn-success btn-sm';
+  }
   openModal('modalFakturDetail');
 }
 
@@ -1845,14 +1886,106 @@ function printFakturDariDetail() {
   printFaktur(html);
 }
 
-async function tandaiLunasFaktur(id) {
-  if (!confirm('Tandai faktur ini sebagai LUNAS?')) return;
-  const { error } = await sb.from('faktur').update({ lunas: true, tanggal_lunas: new Date().toISOString(), sisa: 0 }).eq('id', id);
-  if (error) { toast('❌ ' + error.message); return; }
-  toast('✓ Faktur LUNAS');
+// Tandai Lunas / Batal Lunas
+async function tandaiLunasDariDetail() {
+  const id = document.getElementById('fakturDetailId').value;
+  const f = fakturList.find(x => x.id === id);
+  if (!f) return;
+  if (f.lunas) {
+    // Batal lunas
+    if (!confirm('Batalkan status LUNAS faktur ini?')) return;
+    const { error } = await sb.from('faktur').update({ lunas: false, tanggal_lunas: null }).eq('id', id);
+    if (error) { toast('❌ ' + error.message); return; }
+    toast('✓ Status lunas dibatalkan');
+  } else {
+    // Tandai lunas
+    if (!confirm('Tandai faktur ini sebagai LUNAS?')) return;
+    const { error } = await sb.from('faktur').update({ lunas: true, tanggal_lunas: new Date().toISOString(), sisa: 0 }).eq('id', id);
+    if (error) { toast('❌ ' + error.message); return; }
+    toast('✓ Faktur LUNAS');
+  }
   await loadFaktur();
   closeModal('modalFakturDetail');
 }
+
+// Buka Edit Faktur
+function bukaEditFaktur() {
+  const id = document.getElementById('fakturDetailId').value;
+  const f = fakturList.find(x => x.id === id);
+  if (!f) return;
+  document.getElementById('editFakturId').value = id;
+  document.getElementById('editFakturNama').value = f.nama_pemesan || '';
+  document.getElementById('editFakturHp').value = f.no_hp || '';
+  document.getElementById('editFakturKet').value = f.keterangan || '';
+  document.getElementById('editFakturDp').value = f.dp || 0;
+  document.getElementById('editFakturTotal').textContent = rupiah(f.total);
+  updateSisaEditFaktur();
+  closeModal('modalFakturDetail');
+  openModal('modalEditFaktur');
+}
+
+function updateSisaEditFaktur() {
+  const id = document.getElementById('editFakturId').value;
+  const f = fakturList.find(x => x.id === id);
+  if (!f) return;
+  const dp = parseInt(document.getElementById('editFakturDp').value) || 0;
+  const sisa = f.total - dp;
+  document.getElementById('editFakturSisa').textContent = rupiah(sisa);
+}
+
+async function simpanEditFaktur() {
+  const id = document.getElementById('editFakturId').value;
+  const f = fakturList.find(x => x.id === id);
+  if (!f) return;
+  const nama = document.getElementById('editFakturNama').value.trim();
+  const hp = document.getElementById('editFakturHp').value.trim();
+  const ket = document.getElementById('editFakturKet').value.trim();
+  const dp = parseInt(document.getElementById('editFakturDp').value) || 0;
+  if (!nama) { toast('⚠️ Nama wajib'); return; }
+  if (dp < 0) { toast('⚠️ DP tidak valid'); return; }
+  if (dp > f.total) { toast('⚠️ DP melebihi total'); return; }
+  const sisa = f.total - dp;
+  const updateData = {
+    nama_pemesan: nama,
+    no_hp: hp,
+    keterangan: ket,
+    dp: Math.round(dp),
+    sisa: Math.round(sisa)
+  };
+  const { error } = await sb.from('faktur').update(updateData).eq('id', id);
+  if (error) { toast('❌ ' + error.message); return; }
+  // Update juga di transaksi (nama_pemesan)
+  for (const trxId of (f.transaksi_ids || [])) {
+    await sb.from('transaksi').update({ nama_pemesan: nama }).eq('id', trxId);
+  }
+  closeModal('modalEditFaktur');
+  toast('✓ Faktur diupdate');
+  await loadFaktur();
+}
+
+// Hapus Faktur
+async function hapusFaktur() {
+  const id = document.getElementById('fakturDetailId').value;
+  const f = fakturList.find(x => x.id === id);
+  if (!f) return;
+  if (!confirm(`⚠️ Hapus faktur ${f.nomor_faktur}?\n\nTransaksi hutangnya akan DIKEMBALIKAN ke daftar (bisa difakturkan ulang).\n\nLanjutkan?`)) return;
+  if (!confirm('Yakin banget? Ini tidak bisa dibatalkan!')) return;
+
+  // Lepas faktur_id dari transaksi
+  for (const trxId of (f.transaksi_ids || [])) {
+    await sb.from('transaksi').update({ faktur_id: null, nama_pemesan: null }).eq('id', trxId);
+  }
+
+  // Hapus faktur
+  const { error } = await sb.from('faktur').delete().eq('id', id);
+  if (error) { toast('❌ ' + error.message); return; }
+
+  toast('✓ Faktur dihapus');
+  closeModal('modalFakturDetail');
+  await loadFaktur();
+  await loadSemuaTransaksi();
+}
+
 // ================= ENTER UNTUK LOGIN =================
 document.getElementById('loginPassword').addEventListener('keypress', e => { if (e.key === 'Enter') doLogin(); });
 document.getElementById('loginEmail').addEventListener('keypress', e => { if (e.key === 'Enter') document.getElementById('loginPassword').focus(); });
