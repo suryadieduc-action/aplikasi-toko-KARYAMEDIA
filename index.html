@@ -391,7 +391,24 @@
   </div>
 </div>
 
-<!-- MODAL EDIT -->
+<!-- MODAL EDIT HUTANG -->
+<div class="modal-bg" id="modalEditHutang">
+  <div class="modal">
+    <h3>✏️ Edit Hutang</h3>
+    <label>Nama Pelanggan</label>
+    <input type="text" id="editHutangNama" placeholder="Nama">
+    <label>Jumlah (Rp)</label>
+    <input type="number" id="editHutangJumlah" placeholder="0">
+    <label>Keterangan</label>
+    <input type="text" id="editHutangKet" placeholder="Contoh: Banner 3×1 m (Andi)">
+    <label>Tanggal</label>
+    <input type="date" id="editHutangTanggal">
+    <div class="modal-btns">
+      <button class="btn btn-danger" onclick="closeModal('modalEditHutang')">Batal</button>
+      <button class="btn btn-primary" onclick="simpanEditHutang()">Simpan</button>
+    </div>
+  </div>
+</div>
 <div class="modal-bg" id="modalEdit">
   <div class="modal">
     <h3>✏️ Edit Barang</h3>
@@ -428,6 +445,8 @@
 
     <label>📐 Lebar (meter)</label>
     <input type="number" step="0.01" id="inputLebar" placeholder="0" oninput="hitungCetak()" style="font-size:18px; font-weight:bold; text-align:center;">
+<label>✏️ Keterangan Desain (opsional)</label>
+<input type="text" id="inputKeteranganCetak" placeholder="Contoh: Selamat Ulang Tahun Andi" style="font-size:14px;">
 
     <div style="background:linear-gradient(135deg, #7c3aed, #db2777); color:white; padding:14px; border-radius:12px; text-align:center; margin-top:8px; margin-bottom:14px;">
       <div style="font-size:12px; opacity:0.9;">LUAS TOTAL</div>
@@ -675,24 +694,21 @@ function renderCart() {
   el.innerHTML = cart.map((c, i) => {
     if (c.jenis === 'cetak') {
   const subtotal = c.harga * c.m2; total += subtotal;
+  const detail = c.detail && c.detail[0] ? c.detail[0] : null;
+  const ketStr = detail ? `${detail.ukuran} m${detail.keterangan ? ' (' + detail.keterangan + ')' : ''}` : '';
   return `<div class="cart-item" style="flex-direction:column; align-items:stretch;">
     <div style="display:flex; justify-content:space-between;">
-      <div>
+      <div style="flex:1;">
         <div class="name">${c.nama} <span class="jenis-tag jenis-cetak">CETAK</span></div>
-        <div class="sub">${rupiah(c.harga)}/m² × ${angka(c.m2)} m² = ${rupiah(subtotal)}${c.detail && c.detail.length ? ' • ' + c.detail.join(', ') + ' m' : ''}</div>
+        ${ketStr ? `<div style="font-size:12px; color:#db2777; font-weight:600; margin-top:2px;">📐 ${ketStr}</div>` : ''}
+        <div class="sub">${rupiah(c.harga)}/m² × ${angka(c.m2)} m² = ${rupiah(subtotal)}</div>
       </div>
       <div class="cart-qty">
+        <button onclick="editCartCetak(${i})" style="background:#dbeafe; color:#2563eb;">✏️</button>
         <button onclick="hapusCart(${i})" style="background:#fee2e2; color:#dc2626;">🗑️</button>
       </div>
     </div>
   </div>`;
-} else {
-  total += c.harga * c.qty;
-  return `<div class="cart-item"><div><div class="name">${c.nama}</div><div class="sub">${rupiah(c.harga)} × ${c.qty} = ${rupiah(c.harga * c.qty)}</div></div>
-    <div class="cart-qty"><button onclick="ubahQty(${i}, -1)">−</button><input type="number" value="${c.qty}" onchange="setQty(${i}, this.value)" style="width:60px; text-align:center; padding:5px; font-size:15px; font-weight:bold; border:1.5px solid #2563eb; border-radius:6px; margin:0; background:white;"><button onclick="ubahQty(${i}, 1)">+</button></div></div>`;
-}
-  }).join('');
-  document.getElementById('totalBelanja').textContent = rupiah(total);
 }
 
 function ubahQty(i, delta) {
@@ -720,10 +736,57 @@ function setQty(i, val) {
   renderCart();
 }
 
+function editCartCetak(i) {
+  const c = cart[i];
+  if (!c || c.jenis !== 'cetak') return;
+  const detail = c.detail && c.detail[0] ? c.detail[0] : { ukuran: '', keterangan: '' };
+  // Split ukuran jadi panjang & lebar
+  let p = '', l = '';
+  if (detail.ukuran) {
+    const parts = detail.ukuran.split('×');
+    p = parts[0] || '';
+    l = parts[1] || '';
+  }
+  cetakBarang = {
+    id: c.barangId || c.id,
+    nama: c.nama,
+    jual: c.harga,
+    beli: c.beli
+  };
+  document.getElementById('cetakJudul').textContent = '✏️ Edit ' + c.nama;
+  document.getElementById('cetakHarga').textContent = rupiah(c.harga) + '/m²';
+  document.getElementById('inputPanjang').value = p;
+  document.getElementById('inputLebar').value = l;
+  document.getElementById('inputKeteranganCetak').value = detail.keterangan || '';
+  hitungCetak();
+  openModal('modalCetak');
+
+  // Override simpanCetak sementara — mode edit
+  const btnSimpan = document.querySelector('#modalCetak .btn-success');
+  btnSimpan.textContent = '✓ Update';
+  btnSimpan.onclick = function() {
+    const np = parseFloat(document.getElementById('inputPanjang').value) || 0;
+    const nl = parseFloat(document.getElementById('inputLebar').value) || 0;
+    const nk = document.getElementById('inputKeteranganCetak').value.trim();
+    const nluas = np * nl;
+    if (nluas <= 0) { toast('⚠️ Panjang & lebar harus > 0'); return; }
+    cart[i].m2 = nluas;
+    cart[i].detail = [{ ukuran: `${angka(np)}×${angka(nl)}`, keterangan: nk, luas: nluas, subtotal: nluas * cart[i].harga }];
+    localStorage.setItem('km_cart', JSON.stringify(cart));
+    closeModal('modalCetak');
+    renderCart();
+    toast('✓ Banner diupdate');
+    // Reset tombol
+    btnSimpan.textContent = '✓ Tambah';
+    btnSimpan.onclick = simpanCetak;
+  };
+}
 function hapusCart(i) { cart.splice(i, 1); localStorage.setItem('km_cart', JSON.stringify(cart)); renderCart(); }
 function clearCart() { if (cart.length === 0) return; if (!confirm('Kosongkan?')) return; cart = []; localStorage.setItem('km_cart', JSON.stringify(cart)); renderCart(); }
 // ================= POPUP CETAK (Panjang × Lebar) =================
 let cetakBarang = null;
+let editHutangId = null;
+let editTransaksiId = null;
 
 function bukaPopupCetak(id) {
   const b = barang.find(x => x.id === id);
@@ -733,6 +796,7 @@ function bukaPopupCetak(id) {
   document.getElementById('cetakHarga').textContent = rupiah(b.jual) + '/m²';
   document.getElementById('inputPanjang').value = '';
   document.getElementById('inputLebar').value = '';
+  document.getElementById('inputKeteranganCetak').value = '';
   document.getElementById('cetakLuas').textContent = '0 m²';
   document.getElementById('cetakTotal').textContent = 'Rp 0';
   openModal('modalCetak');
@@ -752,24 +816,35 @@ function simpanCetak() {
   if (!cetakBarang) return;
   const p = parseFloat(document.getElementById('inputPanjang').value) || 0;
   const l = parseFloat(document.getElementById('inputLebar').value) || 0;
+  const ket = document.getElementById('inputKeteranganCetak').value.trim();
   const luas = p * l;
   if (luas <= 0) { toast('⚠️ Panjang & lebar harus > 0'); return; }
-  const item = cart.find(x => x.id === cetakBarang.id);
-  if (item) {
-    item.m2 += luas;
-    if (!item.detail) item.detail = [];
-    item.detail.push(`${angka(p)}×${angka(l)}`);
-  } else {
-    cart.push({
-      id: cetakBarang.id, nama: cetakBarang.nama, harga: cetakBarang.jual, beli: cetakBarang.beli,
-      jenis: 'cetak', m2: luas,
-      detail: [`${angka(p)}×${angka(l)}`]
-    });
-  }
+
+  // Format: { ukuran, keterangan, luas, subtotal }
+  const detailItem = {
+    ukuran: `${angka(p)}×${angka(l)}`,
+    keterangan: ket,
+    luas: luas,
+    subtotal: luas * cetakBarang.jual
+  };
+
+  const item = cart.find(x => x.id === cetakBarang.id && x.jenis === 'cetak');
+  // Karena mau dipisah per pesanan, selalu bikin entry baru
+  cart.push({
+    id: cetakBarang.id + '-' + Date.now(), // id unik biar bisa dipisah
+    barangId: cetakBarang.id,
+    nama: cetakBarang.nama,
+    harga: cetakBarang.jual,
+    beli: cetakBarang.beli,
+    jenis: 'cetak',
+    m2: luas,
+    detail: [detailItem]
+  });
+
   localStorage.setItem('km_cart', JSON.stringify(cart));
   closeModal('modalCetak');
   renderCart();
-  toast(`✓ ${cetakBarang.nama} ${angka(p)}×${angka(l)} = ${angka(luas)} m²`);
+  toast(`✓ ${cetakBarang.nama} ${angka(p)}×${angka(l)} m`);
 }
 // ================= BAYAR =================
 let totalBayar = 0;
@@ -843,16 +918,12 @@ function tampilStruk(trx) {
     <div style="font-size:10px;">Kasir: ${trx.kasir_email || '-'}</div>
   </div><div class="line"></div>`;
   (trx.items || []).forEach(i => {
-    if (i.jenis === 'cetak') html += `<div>${i.nama}</div><div class="row"><span>&nbsp;&nbsp;${angka(i.m2)} m² × ${rupiah(i.harga)}</span><span>${rupiah(i.m2 * i.harga)}</span></div>`;
-    else html += `<div>${i.nama}</div><div class="row"><span>&nbsp;&nbsp;${i.qty} × ${rupiah(i.harga)}</span><span>${rupiah(i.qty * i.harga)}</span></div>`;
-  });
-  html += `<div class="line"></div>
-    <div class="row" style="font-weight:bold;"><span>TOTAL</span><span>${rupiah(trx.total)}</span></div>
-    <div class="row"><span>${trx.metode}</span><span>${rupiah(trx.bayar)}</span></div>
-    ${trx.metode === 'Tunai' ? `<div class="row"><span>Kembali</span><span>${rupiah(trx.kembali)}</span></div>` : ''}
-    <div class="line"></div><div class="center" style="font-size:11px;">Terima kasih 🙏</div></div>`;
-  document.getElementById('strukArea').innerHTML = html;
-  openModal('modalStruk');
+    if (i.jenis === 'cetak') {
+  const detail = i.detail && i.detail[0] ? i.detail[0] : null;
+  const ketStr = detail ? `${detail.ukuran} m${detail.keterangan ? ' (' + detail.keterangan + ')' : ''}` : '';
+  html += `<div>${i.nama}</div>
+    ${ketStr ? `<div style="font-size:10px; color:#666;">&nbsp;&nbsp;${ketStr}</div>` : ''}
+    <div class="row"><span>&nbsp;&nbsp;${angka(i.m2)} m² × ${rupiah(i.harga)}</span><span>${rupiah(i.m2 * i.harga)}</span></div>`;
 }
 
 // ================= BARANG =================
@@ -959,9 +1030,48 @@ function renderHutang() {
     return `<div class="item-list"><div class="item-info">
       <div class="name">${h.nama} ${h.lunas ? '<span class="badge ok">LUNAS</span>' : '<span class="badge">BELUM</span>'}</div>
       <div class="detail">${rupiah(h.jumlah)} • ${tgl}${h.keterangan ? ' • ' + h.keterangan : ''}</div></div>
-      <div class="item-actions">${!h.lunas ? `<button class="btn btn-success btn-sm" onclick="lunasiHutang('${h.id}')">✓</button>` : ''}
-      <button class="btn btn-danger btn-sm" onclick="hapusHutang('${h.id}')">🗑️</button></div></div>`;
+      <div class="item-actions">
+        <button class="btn btn-primary btn-sm" onclick="bukaEditHutang('${h.id}')" title="Edit">✏️</button>
+        ${!h.lunas ? `<button class="btn btn-success btn-sm" onclick="lunasiHutang('${h.id}')">✓</button>` : ''}
+        <button class="btn btn-danger btn-sm" onclick="hapusHutang('${h.id}')">🗑️</button>
+      </div></div>`;
   }).join('');
+}
+
+function bukaEditHutang(id) {
+  const h = hutang.find(x => x.id === id);
+  if (!h) return;
+  editHutangId = id;
+  document.getElementById('editHutangNama').value = h.nama;
+  document.getElementById('editHutangJumlah').value = h.jumlah;
+  document.getElementById('editHutangKet').value = h.keterangan || '';
+  const d = new Date(h.tanggal);
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  document.getElementById('editHutangTanggal').value = `${yyyy}-${mm}-${dd}`;
+  openModal('modalEditHutang');
+}
+
+async function simpanEditHutang() {
+  if (!editHutangId) return;
+  const nama = document.getElementById('editHutangNama').value.trim();
+  const jumlah = parseInt(document.getElementById('editHutangJumlah').value) || 0;
+  const ket = document.getElementById('editHutangKet').value.trim();
+  const tgl = document.getElementById('editHutangTanggal').value;
+  if (!nama) { toast('⚠️ Nama wajib'); return; }
+  if (jumlah <= 0) { toast('⚠️ Jumlah wajib'); return; }
+  const updateData = { nama, jumlah, keterangan: ket };
+  if (tgl) {
+    const jam = new Date().toTimeString().slice(0,8);
+    updateData.tanggal = new Date(tgl + 'T' + jam).toISOString();
+  }
+  const { error } = await sb.from('hutang').update(updateData).eq('id', editHutangId);
+  if (error) { toast('❌ ' + error.message); return; }
+  closeModal('modalEditHutang');
+  toast('✓ Hutang diupdate');
+  editHutangId = null;
+  await loadHutang();
 }
 
 async function lunasiHutang(id) {
@@ -1560,14 +1670,28 @@ function generateFakturHTML(f, withLunas) {
   const tglStr = tgl.toLocaleDateString('id-ID', { day:'2-digit', month:'long', year:'numeric' });
   const terbilang = angkaKeHuruf(f.sisa !== undefined ? f.sisa : f.total);
   // Group items
-  const groupedItems = {};
-  (f.items || []).forEach(i => {
-    const key = i.jenis === 'cetak' ? i.nama + '|' + i.harga : i.nama + '|' + i.harga;
-    if (!groupedItems[key]) groupedItems[key] = { nama: i.nama, harga: i.harga, jenis: i.jenis, qty: 0, m2: 0 };
-    if (i.jenis === 'cetak') groupedItems[key].m2 += i.m2;
-    else groupedItems[key].qty += i.qty;
-  });
-  const items = Object.values(groupedItems);
+  // Untuk cetak: pisah per detail (ukuran + keterangan)
+// Untuk ATK: gabung per nama + harga
+const items = [];
+(f.items || []).forEach(i => {
+  if (i.jenis === 'cetak') {
+    const detail = i.detail && i.detail[0] ? i.detail[0] : { ukuran: '', keterangan: '', luas: i.m2 };
+    items.push({
+      nama: i.nama,
+      harga: i.harga,
+      jenis: 'cetak',
+      m2: i.m2,
+      ukuran: detail.ukuran,
+      keterangan: detail.keterangan,
+      subtotal: i.m2 * i.harga
+    });
+  } else {
+    // Cek apakah nama+harga sama, kalau ada gabung
+    const existing = items.find(x => x.jenis === 'atk' && x.nama === i.nama && x.harga === i.harga);
+    if (existing) existing.qty += i.qty;
+    else items.push({ nama: i.nama, harga: i.harga, jenis: 'atk', qty: i.qty });
+  }
+});
 
   let html = `<div class="faktur-wrapper"><div class="faktur-paper">
     <div class="f-header">
@@ -1589,10 +1713,22 @@ function generateFakturHTML(f, withLunas) {
       <thead><tr><th style="width:30px;">No</th><th>Deskripsi</th><th style="width:70px; text-align:right;">Qty</th><th style="width:100px; text-align:right;">Harga</th><th style="width:110px; text-align:right;">Jumlah</th></tr></thead>
       <tbody>`;
   items.forEach((i, idx) => {
-    const qtyStr = i.jenis === 'cetak' ? `${angka(i.m2)} m²` : `${i.qty} pcs`;
-    const subtotal = i.jenis === 'cetak' ? i.m2 * i.harga : i.qty * i.harga;
-    html += `<tr><td>${idx + 1}</td><td>${i.nama}</td><td style="text-align:right;">${qtyStr}</td><td style="text-align:right;">${rupiah(i.harga)}</td><td style="text-align:right;">${rupiah(subtotal)}</td></tr>`;
-  });
+  let descHtml = i.nama;
+  let qtyStr = '';
+  let subtotal = 0;
+
+  if (i.jenis === 'cetak') {
+    if (i.ukuran) descHtml += ` <span style="color:#666;">${i.ukuran} m</span>`;
+    if (i.keterangan) descHtml += `<br><span style="font-size:10px; color:#888; font-style:italic;">(${i.keterangan})</span>`;
+    qtyStr = `${angka(i.m2)} m²`;
+    subtotal = i.m2 * i.harga;
+  } else {
+    qtyStr = `${i.qty} pcs`;
+    subtotal = i.qty * i.harga;
+  }
+
+  html += `<tr><td>${idx + 1}</td><td>${descHtml}</td><td style="text-align:right;">${qtyStr}</td><td style="text-align:right;">${rupiah(i.harga)}</td><td style="text-align:right;">${rupiah(subtotal)}</td></tr>`;
+});
   html += `</tbody></table>
     <div class="f-total">
       <div class="row"><span class="lbl">Subtotal:</span><span class="val">${rupiah(f.total)}</span></div>
