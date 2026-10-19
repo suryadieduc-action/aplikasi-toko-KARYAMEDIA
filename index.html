@@ -1018,19 +1018,37 @@ async function tambahBarang() {
   const beli = parseInt(document.getElementById('hargaBeli').value) || 0;
   const jual = parseInt(document.getElementById('hargaJual').value) || 0;
   const stok = jenis === 'cetak' ? 0 : (parseInt(document.getElementById('stokBarang').value) || 0);
+  
   if (!nama) { toast('⚠️ Nama wajib'); return; }
   if (jual <= 0) { toast('⚠️ Harga jual wajib'); return; }
+  
   const btn = document.getElementById('btnTambah');
   btn.disabled = true; btn.textContent = '⏳ Menyimpan...';
-  const { error } = await sb.from('barang').insert({ jenis, nama, beli, jual, stok });
+  
+  // Kirim ke Supabase dan minta balikin datanya
+  const { data, error } = await sb.from('barang').insert({ jenis, nama, beli, jual, stok }).select();
+  
   btn.disabled = false; btn.textContent = 'Simpan';
+  
   if (error) { toast('❌ ' + error.message); return; }
+  
+  // Kosongkan form
   document.getElementById('namaBarang').value = '';
   document.getElementById('hargaBeli').value = '';
   document.getElementById('hargaJual').value = '';
   document.getElementById('stokBarang').value = '';
+  
   toast('✓ Ditambahkan');
-  await loadBarang();
+  
+  // 💡 INSTANT UPDATE: Langsung masukkan ke tampilan tanpa nunggu refresh
+  if (data && data[0]) {
+    barang.push(data[0]);
+    barang.sort((a,b) => a.nama.localeCompare(b.nama));
+    renderBarang();
+  }
+  
+  // Sinkronisasi ulang di belakang layar
+  await loadBarang(); 
 }
 
 function renderBarang() {
@@ -1903,21 +1921,31 @@ async function tandaiLunasDariDetail() {
   const id = document.getElementById('fakturDetailId').value;
   const f = fakturList.find(x => x.id === id);
   if (!f) return;
+
   if (f.lunas) {
     // Batal lunas
     if (!confirm('Batalkan status LUNAS faktur ini?')) return;
     const { error } = await sb.from('faktur').update({ lunas: false, tanggal_lunas: null }).eq('id', id);
     if (error) { toast('❌ ' + error.message); return; }
+    
     toast('✓ Status lunas dibatalkan');
+    f.lunas = false; // 💡 Langsung ubah status di layar
+    
   } else {
     // Tandai lunas
     if (!confirm('Tandai faktur ini sebagai LUNAS?')) return;
     const { error } = await sb.from('faktur').update({ lunas: true, tanggal_lunas: new Date().toISOString(), sisa: 0 }).eq('id', id);
     if (error) { toast('❌ ' + error.message); return; }
+    
     toast('✓ Faktur LUNAS');
+    f.lunas = true;  // 💡 Langsung ubah status di layar
+    f.sisa = 0;
   }
-  await loadFaktur();
+
+  renderFaktur(); // 💡 Update daftar faktur seketika!
   closeModal('modalFakturDetail');
+  
+  await loadFaktur(); // Sinkronisasi di belakang layar
 }
 
 // Buka Edit Faktur
